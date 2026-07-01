@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import Room from './models/RoomModel.js';
 import generateResult from './Services/AIService.js';
+import redisClient from './Services/RedisService.js';
 
 
 
@@ -65,15 +66,31 @@ io.on('connection', socket => {
     }
     socket.join(roomId);
 
+    // Send chat history from Redis to the newly connected user
+    const chatKey = `chat:${roomId}`;
+    redisClient.lRange(chatKey, 0, -1)
+        .then(history => {
+            const parsedHistory = history.map(msg => JSON.parse(msg));
+            socket.emit('chat-history', parsedHistory);
+        })
+        .catch(err => console.log('Error fetching chat history:', err));
+
     socket.on('project-message', async data => {
 
         const message = data.message;
 
         const aiMessage = message.includes("@ai");
 
-        socket.broadcast.to(roomId).emit('project-message', data)
+        // Store user message in Redis
+        const messageData = JSON.stringify({
+            sender: data.sender,
+            message: data.message,
+            timestamp: new Date().toISOString()
+        });
+        await redisClient.rPush(chatKey, messageData);
+        await redisClient.expire(chatKey, 86400);
 
-        console.log(data);
+        socket.broadcast.to(roomId).emit('project-message', data)
 
         if (aiMessage) {
 
@@ -81,6 +98,14 @@ io.on('connection', socket => {
 
             const result = await generateResult(prompt);
 
+            // Store AI response in Redis
+            const aiMessageData = JSON.stringify({
+                sender: 'AI',
+                message: result,
+                timestamp: new Date().toISOString()
+            });
+            await redisClient.rPush(chatKey, aiMessageData);
+            await redisClient.expire(chatKey, 86400);
 
             io.to(roomId).emit('project-message', {
                 message: result,
@@ -94,6 +119,9 @@ io.on('connection', socket => {
     })
 
     socket.on('coding-session-toggle', data => {
+        if (socket.user.userId.toString() !== socket.room.createdBy.toString()) {
+            return;
+        }
         socket.broadcast.to(roomId).emit('coding-session-toggle', data);
     });
 

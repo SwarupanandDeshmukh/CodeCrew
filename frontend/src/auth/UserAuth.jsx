@@ -2,13 +2,14 @@ import React from 'react'
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../context/user.context';
 import { useState,useContext, useEffect } from 'react';
+import axiosInstance from '../config/axios';
 
 
 const UserAuth = ({children}) => {
 
     const [loading,isLoading] = useState(true);
 
-    const {user} = useContext(UserContext);
+    const {user, setUser} = useContext(UserContext);
 
     const token = localStorage.getItem('token');
 
@@ -21,10 +22,22 @@ const UserAuth = ({children}) => {
             return ()=>clearTimeout(timer);
         }
 
-       if(!user || !token)
-       {
+        if(!token)
+        {
             navigate('/login');
-       }
+            return;
+        }
+
+        // Token exists but user context is null (page was refreshed) — re-hydrate
+        axiosInstance.get('/users/profile')
+            .then((res)=>{
+                setUser(res.data);
+                isLoading(false);
+            })
+            .catch(()=>{
+                localStorage.removeItem('token');
+                navigate('/login');
+            });
 
     },[])
 

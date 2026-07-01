@@ -1,7 +1,8 @@
 import User from "../models/UserModel.js";
 import { validationResult } from "express-validator";
-import { CreateRoom, GetAllRooms, JoinRoom, GetRoomByRoomId } from "../Services/RoomService.js";
-import Notification from "../models/NotificationModel.js";
+import { CreateRoom, GetAllRooms, JoinRoom, GetRoomByRoomId, DeleteRoom } from "../Services/RoomService.js";
+import redisClient from "../Services/RedisService.js";
+import crypto from 'crypto';
 
 const CreateRoomController = async (req, res) => {
     const errors = validationResult(req);
@@ -82,17 +83,24 @@ const InviteToRoomController = async (req, res) => {
         const { roomId, roomName, recipientIds } = req.body;
         const loggedinUser = await User.findOne({ email: req.user.email });
 
+        const room = await GetRoomByRoomId({ roomId });
+        if (room.createdBy.toString() !== loggedinUser._id.toString()) {
+            return res.status(403).json({ error: "Only the room owner can invite members" });
+        }
+
         const notifications = [];
         for (const recipientId of recipientIds) {
-            const notification = await Notification.create({
+            const uniqueId = crypto.randomBytes(4).toString('hex');
+            const key = `notification:invite:${recipientId}:${uniqueId}`;
+            const notificationData = {
                 recipientId,
-                senderId: loggedinUser._id,
+                senderId: loggedinUser._id.toString(),
                 senderUsername: loggedinUser.username,
                 roomId,
-                roomName,
-                type: 'room-invite'
-            });
-            notifications.push(notification);
+                roomName
+            };
+            await redisClient.set(key, JSON.stringify(notificationData), { EX: 600 });
+            notifications.push({ _id: uniqueId, ...notificationData });
         }
 
         return res.status(200).json({ notifications });
@@ -105,10 +113,22 @@ const InviteToRoomController = async (req, res) => {
 const GetNotificationsController = async (req, res) => {
     try {
         const loggedinUser = await User.findOne({ email: req.user.email });
-        const notifications = await Notification.find({
-            recipientId: loggedinUser._id,
-            read: false
-        }).sort({ createdAt: -1 });
+        const keys = await redisClient.keys(`notification:invite:${loggedinUser._id}:*`);
+
+        if (keys.length === 0) {
+            return res.status(200).json({ notifications: [] });
+        }
+
+        const values = await redisClient.mGet(keys);
+        const notifications = [];
+
+        for (let i = 0; i < keys.length; i++) {
+            if (values[i]) {
+                const parsed = JSON.parse(values[i]);
+                parsed._id = keys[i].split(':').pop();
+                notifications.push(parsed);
+            }
+        }
 
         return res.status(200).json({ notifications });
     }
@@ -120,8 +140,27 @@ const GetNotificationsController = async (req, res) => {
 const MarkNotificationReadController = async (req, res) => {
     try {
         const { notificationId } = req.params;
-        await Notification.findByIdAndUpdate(notificationId, { read: true });
-        return res.status(200).json({ message: "Notification marked as read" });
+        const loggedinUser = await User.findOne({ email: req.user.email });
+        const key = `notification:invite:${loggedinUser._id}:${notificationId}`;
+        await redisClient.del(key);
+        return res.status(200).json({ message: "Notification removed" });
+    }
+    catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+}
+
+const DeleteRoomController = async (req, res) => {
+    try {
+        const { roomId } = req.params;
+        const loggedinUser = await User.findOne({ email: req.user.email });
+
+        await DeleteRoom({ roomId, userID: loggedinUser._id });
+
+        // Cleanup Redis data for this room
+        await redisClient.del(`chat:${roomId}`);
+
+        return res.status(200).json({ message: "Room deleted successfully" });
     }
     catch (error) {
         return res.status(400).json({ error: error.message });
@@ -135,5 +174,6 @@ export {
     GetRoomByRoomIdController,
     InviteToRoomController,
     GetNotificationsController,
-    MarkNotificationReadController
+    MarkNotificationReadController,
+    DeleteRoomController
 };

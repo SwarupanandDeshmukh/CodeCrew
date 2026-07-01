@@ -40,6 +40,8 @@ const Room = () => {
   const [editorLanguage, setEditorLanguage] = useState('javascript');
   const [editorCode, setEditorCode] = useState('// Start coding here...\n');
 
+  const isOwner = room?.createdBy?.toString() === (user?._id || user?.userId)?.toString();
+
   useEffect(() => {
     // First join the room (handles both existing members and new joins via URL)
     axiosInstance.post('/room/join', { roomId })
@@ -58,6 +60,17 @@ const Room = () => {
     if (!joined || !roomId) return;
 
     initializeSocket(roomId);
+
+    const senderName = user?.username || user?.email || 'Anonymous';
+
+    recieveMessage('chat-history', history => {
+      const formattedHistory = history.map(msg => ({
+        message: msg.message,
+        sender: msg.sender,
+        type: msg.sender === 'AI' ? 'ai' : msg.sender === senderName ? 'outgoing' : 'incoming'
+      }));
+      setMessages(formattedHistory);
+    });
 
     recieveMessage('coding-session-toggle', data => {
       setCodingSession(data.open);
@@ -136,10 +149,7 @@ const Room = () => {
     );
   }
 
-  function copyRoomLink() {
-    const link = `${window.location.origin}/room/${roomId}`;
-    navigator.clipboard.writeText(link);
-  }
+
 
   function ConvertString(InputMessage) {
     try {
@@ -205,7 +215,8 @@ const Room = () => {
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* Code Session Toggle */}
+            {/* Code Session Toggle - Owner only */}
+            {isOwner && (
             <button
               onClick={() => {
                 setCodingSession(!codingSession);
@@ -218,15 +229,10 @@ const Room = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
               </svg>
             </button>
-            <button
-              onClick={copyRoomLink}
-              className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-indigo-600"
-              title="Copy room link"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-            </button>
+            )}
+
+            {/* Invite - Owner only */}
+            {isOwner && (
             <button
               onClick={openInviteModal}
               className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-indigo-600"
@@ -236,6 +242,7 @@ const Room = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
               </svg>
             </button>
+            )}
             <button
               onClick={() => setIsSidePanelOpen(!isSidePanelOpen)}
               className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-indigo-600"
@@ -316,7 +323,7 @@ const Room = () => {
 
       {/* Coding Session Panel */}
       {codingSession && (
-        <section className="flex-1 flex flex-col h-full border-l border-slate-200 bg-[#1e1e1e] animate-fadeIn">
+        <section className="flex-1 min-w-0 flex flex-col h-full border-l border-slate-200 bg-[#1e1e1e] animate-fadeIn">
           {/* Editor Header */}
           <div className="bg-[#252526] border-b border-[#3c3c3c] px-4 py-2.5 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -335,6 +342,7 @@ const Room = () => {
                 ))}
               </select>
             </div>
+            {isOwner && (
             <button
               onClick={() => {
                 setCodingSession(false);
@@ -348,6 +356,7 @@ const Room = () => {
               </svg>
               Close
             </button>
+            )}
           </div>
 
           {/* Monaco Editor */}

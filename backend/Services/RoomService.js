@@ -77,4 +77,19 @@ const GetRoomByRoomId = async ({roomId}) =>{
     return room;
 }
 
-export {CreateRoom, GetAllRooms, JoinRoom, GetRoomByRoomId};
+const DeleteRoom = async ({roomId, userID}) =>{
+    if(!roomId)
+        throw new Error("Room ID is required");
+
+    const room = await Room.findOne({roomId});
+    if(!room)
+        throw new Error("Room not found");
+
+    if(room.createdBy.toString() !== userID.toString())
+        throw new Error("Only the room creator can delete this room");
+
+    await Room.deleteOne({roomId});
+    return room;
+}
+
+export {CreateRoom, GetAllRooms, JoinRoom, GetRoomByRoomId, DeleteRoom};

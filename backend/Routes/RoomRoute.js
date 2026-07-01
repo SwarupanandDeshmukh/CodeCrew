@@ -7,7 +7,8 @@ import {
     GetRoomByRoomIdController,
     InviteToRoomController,
     GetNotificationsController,
-    MarkNotificationReadController
+    MarkNotificationReadController,
+    DeleteRoomController
 } from "../Controllers/RoomController.js";
 import authUser from "../Middleware/AuthMiddleware.js";
 
@@ -52,6 +53,11 @@ RoomRouter.get('/notifications',
 RoomRouter.put('/notifications/:notificationId/read',
     authUser,
     MarkNotificationReadController
+);
+
+RoomRouter.delete('/delete/:roomId',
+    authUser,
+    DeleteRoomController
 );
 
 export default RoomRouter;

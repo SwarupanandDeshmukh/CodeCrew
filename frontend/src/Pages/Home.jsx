@@ -21,6 +21,7 @@ const Home = () => {
   const [allUsers, setAllUsers] = useState([]);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const navigate = useNavigate();
+  const [roomToDelete, setRoomToDelete] = useState(null);
 
   function createRoom(e)
   {
@@ -47,6 +48,19 @@ const Home = () => {
       setRooms(res.data.AllRooms);
     }).catch((err)=>{
       console.log(err);
+    });
+  }
+
+  function confirmDeleteRoom()
+  {
+    if(!roomToDelete) return;
+    axiosInstance.delete(`/room/delete/${roomToDelete}`)
+    .then(()=>{
+      getRooms();
+      setRoomToDelete(null);
+    }).catch((err)=>{
+      alert(err.response?.data?.error || 'Failed to delete room');
+      setRoomToDelete(null);
     });
   }
 
@@ -141,11 +155,7 @@ const Home = () => {
       });
   }
 
-  function copyRoomLink(rid)
-  {
-    const link = `${window.location.origin}/room/${rid}`;
-    navigator.clipboard.writeText(link);
-  }
+
 
   useEffect(() =>{
     getRooms();
@@ -306,19 +316,22 @@ const Home = () => {
                   </div>
                 </div>
                 <div className="px-5 pb-4 flex gap-2">
-                  <button
-                    onClick={(e) => {e.stopPropagation(); copyRoomLink(room.roomId);}}
-                    className="flex-1 py-2 text-xs font-medium bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors border border-slate-200"
-                    title="Copy room link"
-                  >
-                    Copy Link
-                  </button>
-                  <button
-                    onClick={(e) => {e.stopPropagation(); openInviteModal(room);}}
-                    className="flex-1 py-2 text-xs font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors border border-indigo-200"
-                  >
-                    Invite
-                  </button>
+                  {(room.createdBy === user?._id || room.createdBy === user?.userId) && (
+                    <>
+                      <button
+                        onClick={(e) => {e.stopPropagation(); openInviteModal(room);}}
+                        className="flex-1 py-2 text-xs font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors border border-indigo-200"
+                      >
+                        Invite
+                      </button>
+                      <button
+                        onClick={(e) => {e.stopPropagation(); setRoomToDelete(room.roomId);}}
+                        className="flex-1 py-2 text-xs font-medium bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-200"
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -434,6 +447,36 @@ const Home = () => {
             >
               Send Invite{selectedUsers.length > 0 ? ` (${selectedUsers.length})` : ''}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {roomToDelete && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm z-50" onClick={() => setRoomToDelete(null)}>
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm animate-slideIn" onClick={(e) => e.stopPropagation()}>
+            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4 mx-auto">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-slate-800 mb-2 text-center">Delete Room?</h2>
+            <p className="text-slate-500 text-sm mb-6 text-center">Are you sure you want to delete this room? This action cannot be undone and will remove all data associated with it.</p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRoomToDelete(null)}
+                className="flex-1 py-2.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteRoom}
+                className="flex-1 py-2.5 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors shadow-sm hover:shadow shadow-red-200"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
