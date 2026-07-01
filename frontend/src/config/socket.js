@@ -2,13 +2,13 @@ import socket from 'socket.io-client'
 
 let socketInstance = null;
 
-const initializeSocket = (projectID) =>{
+const initializeSocket = (roomId) =>{
     socketInstance = socket(import.meta.env.VITE_BACKEND_URL,{
         auth:{
             token:localStorage.getItem('token')
         },
         query:{
-            projectID
+            roomId
         }
     })
 }

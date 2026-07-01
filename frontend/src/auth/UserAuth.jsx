@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../context/user.context';
-import { useState,useContext } from 'react';
+import { useState,useContext, useEffect } from 'react';
 
 
 const UserAuth = ({children}) => {
@@ -14,10 +14,10 @@ const UserAuth = ({children}) => {
 
     const navigate = useNavigate();
 
-    useEffect(() =>{
+    useEffect(()=>{
         if(user)
         {
-            const timer = setTimeout(()=> isLoading(false),1500);
+            const timer = setTimeout(()=> isLoading(false),800);
             return ()=>clearTimeout(timer);
         }
 
@@ -32,13 +32,15 @@ const UserAuth = ({children}) => {
     if(loading)
     {
         return (
-            <div className='min-h-screen bg-gray-900 p-4 flex items-center justify-center'>
-                
-                    <div class="flex flex-row gap-2">
-                    <div class="w-4 h-4 rounded-full bg-blue-700 animate-bounce"></div>
-                    <div class="w-4 h-4 rounded-full bg-blue-700 animate-bounce [animation-delay:-.3s]"></div>
-                    <div class="w-4 h-4 rounded-full bg-blue-700 animate-bounce [animation-delay:-.5s]"></div>
+            <div className='min-h-screen bg-slate-50 flex items-center justify-center'>
+                <div className="flex flex-col items-center gap-4">
+                    <div className="flex flex-row gap-2">
+                        <div className="w-3 h-3 rounded-full bg-indigo-500 animate-bounce"></div>
+                        <div className="w-3 h-3 rounded-full bg-indigo-500 animate-bounce [animation-delay:-.3s]"></div>
+                        <div className="w-3 h-3 rounded-full bg-indigo-500 animate-bounce [animation-delay:-.5s]"></div>
                     </div>
+                    <p className="text-slate-400 text-sm font-medium">Loading...</p>
+                </div>
             </div>
         )
     }

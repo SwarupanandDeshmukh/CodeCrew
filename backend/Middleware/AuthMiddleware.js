@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
-import client from '../Services/RedisService.js';
 
 const authUser = async (req,res,next) =>{
 
-      let token = null;
+    try {
+        let token = null;
 
         // Check cookies
         if (req.cookies && req.cookies.token) {
@@ -13,22 +13,19 @@ const authUser = async (req,res,next) =>{
         else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
             token = req.headers.authorization.split(' ')[1];
         }
-    if(!token)
-    {
-        return res.status(400).send("Unauthorized user");
+
+        if(!token || token === 'null' || token === 'undefined')
+        {
+            return res.status(401).json({error:"Unauthorized user"});
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
     }
-
-    const blacklisted = await client.get(token);
-
-    if(blacklisted)
-    {
-        res.cookie(token,'');
-        return res.status(405).json({error:"Unauthorized user"});
+    catch(error) {
+        return res.status(401).json({error:"Invalid or expired token"});
     }
-
-    const decoded = jwt.verify(token,process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
 }
 
 export default authUser;

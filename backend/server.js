@@ -5,51 +5,50 @@ import http from 'http';
 import connectDB from './db/db.js';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import mongoose from 'mongoose';
-import Project from './models/ProjectModel.js';
+import Room from './models/RoomModel.js';
 import generateResult from './Services/AIService.js';
 
 
 
-const port = process.env.PORT;
+const port = process.env.PORT || 5000;
 
 connectDB();
 
 
 const server = http.createServer(app);
 
-const io = new Server(server,{
-    cors:{
-        origin:"*"
+const io = new Server(server, {
+    cors: {
+        origin: "*"
     }
 });
 
-io.use(async (socket,next)=>{
-    try{
-            const token = socket.handshake.auth?.token || socket.handshake.headers.authorization?.split(' ')[1];
+io.use(async (socket, next) => {
+    try {
+        const token = socket.handshake.auth?.token || socket.handshake.headers.authorization?.split(' ')[1];
 
-            const projectID = socket.handshake.query.projectID;
+        const roomId = socket.handshake.query.roomId;
 
-            if(!projectID)
-                return next(new Error('Project ID is required'))
+        if (!roomId)
+            return next(new Error('Room ID is required'))
 
-            if(!mongoose.Types.ObjectId.isValid(projectID))
-                return next(new Error('Project ID is not valid'));
+        const room = await Room.findOne({ roomId });
+        if (!room)
+            return next(new Error('Room not found'));
 
-            socket.project = await Project.findById(projectID)
+        socket.room = room;
 
-            if(!token)
-                return next(new Error("Authentication Error"));
+        if (!token)
+            return next(new Error("Authentication Error"));
 
-            const decode = jwt.verify(token,process.env.JWT_SECRET);
+        const decode = jwt.verify(token, process.env.JWT_SECRET);
 
-            if(!decode)
-                return next(new Error("Authentication Error"));
-            socket.user = decode;
-            next();
+        if (!decode)
+            return next(new Error("Authentication Error"));
+        socket.user = decode;
+        next();
     }
-    catch(error)
-    {
+    catch (error) {
         next(error);
     }
 });
@@ -58,50 +57,53 @@ io.on('connection', socket => {
 
     console.log("User connected via socket");
 
-    const roomID = socket.handshake.query.projectID;
+    const roomId = socket.handshake.query.roomId;
 
-    if (!roomID) {
-    console.log('No project ID provided');
-    return;
-  }
-    socket.join(roomID);
+    if (!roomId) {
+        console.log('No room ID provided');
+        return;
+    }
+    socket.join(roomId);
 
-    socket.on('project-message',async data=>{
+    socket.on('project-message', async data => {
 
         const message = data.message;
 
         const aiMessage = message.includes("@ai");
 
-        socket.broadcast.to(roomID).emit('project-message',data)
+        socket.broadcast.to(roomId).emit('project-message', data)
 
         console.log(data);
 
-        if(aiMessage)
-        {
+        if (aiMessage) {
 
-            const prompt = message.replace('@ai','');
+            const prompt = message.replace('@ai', '');
 
             const result = await generateResult(prompt);
 
 
-            io.to(roomID).emit('project-message',{
-                message:result,
-                sender:'AI'
+            io.to(roomId).emit('project-message', {
+                message: result,
+                sender: 'AI'
             });
 
             return;
         }
 
-        
+
     })
 
-  socket.on('event', data => { /* … */ });
-  socket.on('disconnect', () => {
-    console.log('user Disconnected');
-    socket.leave(roomID);
-  });
+    socket.on('coding-session-toggle', data => {
+        socket.broadcast.to(roomId).emit('coding-session-toggle', data);
+    });
+
+    socket.on('event', data => { /* … */ });
+    socket.on('disconnect', () => {
+        console.log('user Disconnected');
+        socket.leave(roomId);
+    });
 });
 
-server.listen(port, ()=>{
+server.listen(port, () => {
     console.log(`The server is running at ${port}`)
 })
