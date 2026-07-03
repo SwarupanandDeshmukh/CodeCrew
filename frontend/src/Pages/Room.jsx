@@ -26,8 +26,10 @@ const Room = () => {
   const [room, setRoom] = useState(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
-  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
-  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('info');
+  const [memberSearchQuery, setMemberSearchQuery] = useState('');
+  const [inviteSearchQuery, setInviteSearchQuery] = useState('');
   const [allUsers, setAllUsers] = useState([]);
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [joined, setJoined] = useState(false);
@@ -39,6 +41,7 @@ const Room = () => {
   const [codingSession, setCodingSession] = useState(false);
   const [editorLanguage, setEditorLanguage] = useState('javascript');
   const [editorCode, setEditorCode] = useState('// Start coding here...\n');
+  const [kickedFromRoom, setKickedFromRoom] = useState(null);
 
   const isOwner = room?.createdBy?.toString() === (user?._id || user?.userId)?.toString();
 
@@ -72,6 +75,12 @@ const Room = () => {
       setMessages(formattedHistory);
     });
 
+    recieveMessage('room-state', data => {
+      if (data.codingSession !== undefined) {
+        setCodingSession(data.codingSession);
+      }
+    });
+
     recieveMessage('coding-session-toggle', data => {
       setCodingSession(data.open);
     });
@@ -84,6 +93,35 @@ const Room = () => {
           type: data.sender === 'AI' ? 'ai' : 'incoming'
         }
       ]);
+    });
+
+    recieveMessage('user-left', data => {
+      setRoom(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          participants: prev.participants.filter(
+            p => p.userId?.toString() !== data.userId?.toString()
+          )
+        };
+      });
+    });
+
+    recieveMessage('user-kicked', data => {
+      const currentUserId = (user?._id || user?.userId)?.toString();
+      if (data.userId?.toString() === currentUserId) {
+        setKickedFromRoom(data.roomName);
+      } else {
+        setRoom(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            participants: prev.participants.filter(
+              p => p.userId?.toString() !== data.userId?.toString()
+            )
+          };
+        });
+      }
     });
 
   }, [joined, roomId]);
@@ -115,13 +153,24 @@ const Room = () => {
     }
   }
 
-  function openInviteModal() {
-    setSelectedUsers([]);
-    axiosInstance.get('/users/getUsers')
-      .then((res) => {
-        setAllUsers(res.data.allUser);
-        setShowInviteModal(true);
-      }).catch((err) => {
+  function openSettings(tab = 'info') {
+    setActiveTab(tab);
+    setShowSettingsModal(true);
+    if (isOwner && allUsers.length === 0) {
+      axiosInstance.get('/users/getUsers')
+        .then((res) => {
+          setAllUsers(res.data.allUser);
+        }).catch((err) => {
+          console.log(err);
+        });
+    }
+  }
+
+  function deleteRoom() {
+    axiosInstance.delete(`/room/delete/${roomId}`)
+      .then(() => {
+        navigate('/');
+      }).catch(err => {
         console.log(err);
       });
   }
@@ -134,7 +183,6 @@ const Room = () => {
       roomName: room.roomName,
       recipientIds: selectedUsers
     }).then((res) => {
-      setShowInviteModal(false);
       setSelectedUsers([]);
     }).catch((err) => {
       console.log(err);
@@ -149,7 +197,20 @@ const Room = () => {
     );
   }
 
+  function handleLeaveRoom() {
+    axiosInstance.post('/room/leave', { roomId })
+      .then(() => {
+        sendMessage('leave-room', { userId: user?._id || user?.userId, username: user?.username });
+        navigate('/');
+      })
+      .catch(err => {
+        console.log(err);
+      });
+  }
 
+  function kickUser(userId, username) {
+    sendMessage('kick-user', { userId, username });
+  }
 
   function ConvertString(InputMessage) {
     try {
@@ -217,39 +278,29 @@ const Room = () => {
           <div className="flex items-center gap-1">
             {/* Code Session Toggle - Owner only */}
             {isOwner && (
-            <button
-              onClick={() => {
-                setCodingSession(!codingSession);
-                sendMessage('coding-session-toggle', { open: !codingSession });
-              }}
-              className={`p-2 rounded-lg transition-colors ${codingSession ? 'bg-emerald-100 text-emerald-600' : 'hover:bg-slate-100 text-slate-500 hover:text-indigo-600'}`}
-              title={codingSession ? 'Close coding session' : 'Start coding session'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-              </svg>
-            </button>
+              <button
+                onClick={() => {
+                  setCodingSession(!codingSession);
+                  sendMessage('coding-session-toggle', { open: !codingSession });
+                }}
+                className={`p-2 rounded-lg transition-colors ${codingSession ? 'bg-emerald-100 text-emerald-600' : 'hover:bg-slate-100 text-slate-500 hover:text-indigo-600'}`}
+                title={codingSession ? 'Close coding session' : 'Start coding session'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                </svg>
+              </button>
             )}
 
-            {/* Invite - Owner only */}
-            {isOwner && (
+            {/* Room Settings */}
             <button
-              onClick={openInviteModal}
+              onClick={() => openSettings('info')}
               className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-indigo-600"
-              title="Invite people"
+              title="Room Settings"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-              </svg>
-            </button>
-            )}
-            <button
-              onClick={() => setIsSidePanelOpen(!isSidePanelOpen)}
-              className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-indigo-600"
-              title="View members"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
           </div>
@@ -275,10 +326,10 @@ const Room = () => {
             <div
               key={idx}
               className={`max-w-sm flex flex-col p-3 rounded-2xl animate-slideIn ${msg.type === 'outgoing'
-                  ? 'ml-auto bg-indigo-600 text-white rounded-br-md'
-                  : msg.type === 'ai'
-                    ? 'bg-violet-50 border border-violet-100 text-slate-800 rounded-bl-md'
-                    : 'bg-white border border-slate-200 text-slate-800 rounded-bl-md shadow-sm'
+                ? 'ml-auto bg-indigo-600 text-white rounded-br-md'
+                : msg.type === 'ai'
+                  ? 'bg-violet-50 border border-violet-100 text-slate-800 rounded-bl-md'
+                  : 'bg-white border border-slate-200 text-slate-800 rounded-bl-md shadow-sm'
                 }`}
             >
               <span className={`text-xs font-medium mb-1 ${msg.type === 'outgoing' ? 'text-indigo-200' : msg.type === 'ai' ? 'text-violet-500' : 'text-indigo-500'
@@ -343,19 +394,19 @@ const Room = () => {
               </select>
             </div>
             {isOwner && (
-            <button
-              onClick={() => {
-                setCodingSession(false);
-                sendMessage('coding-session-toggle', { open: false });
-              }}
-              className="flex items-center gap-1.5 px-3 py-1 bg-[#3c3c3c] hover:bg-[#4c4c4c] text-[#cccccc] text-xs rounded-md transition-colors"
-              title="Close coding session"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-              Close
-            </button>
+              <button
+                onClick={() => {
+                  setCodingSession(false);
+                  sendMessage('coding-session-toggle', { open: false });
+                }}
+                className="flex items-center gap-1.5 px-3 py-1 bg-[#3c3c3c] hover:bg-[#4c4c4c] text-[#cccccc] text-xs rounded-md transition-colors"
+                title="Close coding session"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                Close
+              </button>
             )}
           </div>
 
@@ -388,83 +439,220 @@ const Room = () => {
         </section>
       )}
 
-      {/* Side Panel - Members */}
-      <aside className={`bg-white border-slate-200 flex flex-col transition-all duration-300 ${isSidePanelOpen ? 'w-72 border-l translate-x-0' : 'w-0 border-0 translate-x-full overflow-hidden'
-        }`}>
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-800 text-sm">Members</h3>
-          <button onClick={() => setIsSidePanelOpen(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-3">
-          {room?.participants && room.participants.length > 0 ? (
-            room.participants.map((p, idx) => (
-              <div key={idx} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors mb-1">
-                <div className="w-8 h-8 rounded-full bg-indigo-400 flex items-center justify-center text-white text-xs font-bold">
-                  {p.username?.charAt(0)?.toUpperCase() || '?'}
-                </div>
-                <span className="text-sm font-medium text-slate-700">{p.username || 'Unknown'}</span>
+      {/* Unified Settings Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-[70]" onClick={() => setShowSettingsModal(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl h-[600px] max-h-[85vh] flex overflow-hidden animate-slideIn" onClick={(e) => e.stopPropagation()}>
+            {/* Sidebar */}
+            <div className="w-64 bg-slate-50 border-r border-slate-200 p-5 flex flex-col">
+              <h2 className="text-2xl font-bold text-slate-800 mb-6 px-1">Settings</h2>
+              <nav className="flex-1 flex flex-col gap-1.5">
+                <button onClick={() => setActiveTab('info')} className={`px-4 py-3 rounded-xl text-sm font-medium transition-colors text-left flex items-center gap-3 ${activeTab === 'info' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-600 hover:bg-slate-200'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Room Info
+                </button>
+                <button onClick={() => setActiveTab('members')} className={`px-4 py-3 rounded-xl text-sm font-medium transition-colors text-left flex items-center justify-between ${activeTab === 'members' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-600 hover:bg-slate-200'}`}>
+                  <div className="flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                    Members
+                  </div>
+                  <span className="bg-indigo-100 text-indigo-700 text-xs py-0.5 px-2 rounded-full font-bold">{room?.participants?.length || 0}</span>
+                </button>
+                {isOwner && (
+                  <button onClick={() => setActiveTab('invite')} className={`px-4 py-3 rounded-xl text-sm font-medium transition-colors text-left flex items-center gap-3 ${activeTab === 'invite' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-600 hover:bg-slate-200'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
+                    Invite People
+                  </button>
+                )}
+              </nav>
+              <div className="mt-4 pt-5 border-t border-slate-200">
+                {isOwner ? (
+                  <button onClick={deleteRoom} className="w-full px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 hover:shadow-sm rounded-xl text-sm font-semibold transition-all text-left flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    Delete Room
+                  </button>
+                ) : (
+                  <button onClick={handleLeaveRoom} className="w-full px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 hover:shadow-sm rounded-xl text-sm font-semibold transition-all text-left flex items-center gap-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                    Leave Room
+                  </button>
+                )}
               </div>
-            ))
-          ) : (
-            <p className="text-slate-400 text-sm text-center py-4">No members</p>
-          )}
-        </div>
-      </aside>
-
-      {/* Invite Modal */}
-      {showInviteModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm z-50" onClick={() => setShowInviteModal(false)}>
-          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm animate-slideIn" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-800">Invite People</h2>
-                <p className="text-slate-400 text-sm">to {room?.roomName}</p>
-              </div>
-              <button onClick={() => setShowInviteModal(false)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
-            <div className="flex flex-col gap-2 mb-4 overflow-y-auto max-h-64">
-              {allUsers.length === 0 ? (
-                <p className="text-slate-400 text-sm text-center py-4">No other users found</p>
-              ) : (
-                allUsers.map(u => (
-                  <div
-                    key={u._id}
-                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${selectedUsers.includes(u._id)
-                        ? 'border-indigo-300 bg-indigo-50'
-                        : 'border-slate-100 bg-slate-50 hover:bg-slate-100'
-                      }`}
-                    onClick={() => handleUserToggle(u._id)}
-                  >
-                    <div className="w-9 h-9 rounded-full bg-indigo-400 flex items-center justify-center text-white text-sm font-bold">
-                      {u.username?.charAt(0)?.toUpperCase() || u.email?.charAt(0)?.toUpperCase()}
+            
+            {/* Content Area */}
+            <div className="flex-1 p-8 flex flex-col bg-white relative overflow-hidden">
+              <button onClick={() => setShowSettingsModal(false)} className="absolute top-6 right-6 p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 rounded-xl transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+
+              {activeTab === 'info' && (
+                <div className="animate-fadeIn">
+                  <h3 className="text-2xl font-bold text-slate-800 mb-8">Room Information</h3>
+                  <div className="space-y-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Room Name</label>
+                      <p className="text-slate-800 font-bold text-xl mt-1">{room?.roomName}</p>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-700">{u.username || 'User'}</p>
-                      <p className="text-xs text-slate-400">{u.email}</p>
+                    <div>
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Room ID</label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <code className="bg-indigo-50 text-indigo-700 px-4 py-2 rounded-xl text-sm font-mono font-bold border border-indigo-100">{room?.roomId}</code>
+                      </div>
                     </div>
-                    {selectedUsers.includes(u._id) && (
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
+                    <div className="flex gap-16 pt-4 border-t border-slate-200">
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Members</label>
+                        <div className="flex items-center gap-2 mt-2">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                          <p className="text-slate-800 font-bold text-xl">{room?.participants?.length || 0}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Your Role</label>
+                        <div className="mt-2">
+                          {isOwner ? <span className="text-emerald-700 bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-lg text-sm font-bold shadow-sm">Owner</span> : <span className="text-slate-700 bg-slate-200 border border-slate-300 px-3 py-1 rounded-lg text-sm font-bold shadow-sm">Member</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'members' && (
+                <div className="animate-fadeIn flex flex-col h-full min-h-0">
+                  <h3 className="text-2xl font-bold text-slate-800 mb-6">Room Members</h3>
+                  <div className="relative mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-4 top-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input 
+                      type="text" 
+                      placeholder="Search members..." 
+                      value={memberSearchQuery}
+                      onChange={(e) => setMemberSearchQuery(e.target.value)}
+                      className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium"
+                    />
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
+                    {room?.participants?.filter(p => p.username?.toLowerCase().includes(memberSearchQuery.toLowerCase())).map((p, idx) => (
+                      <div key={idx} className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-2xl hover:border-indigo-200 hover:shadow-md transition-all group">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-lg font-bold shadow-sm">
+                          {p.username?.charAt(0)?.toUpperCase() || '?'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-base font-bold text-slate-800 truncate">{p.username || 'Unknown'}</p>
+                          {p.userId?.toString() === room?.createdBy?.toString() ? (
+                             <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider mt-0.5">Owner</p>
+                          ) : (
+                             <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mt-0.5">Member</p>
+                          )}
+                        </div>
+                        {isOwner && p.userId?.toString() !== (user?._id || user?.userId)?.toString() && (
+                          <button
+                            onClick={() => kickUser(p.userId, p.username)}
+                            className="p-2.5 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white rounded-xl transition-all shadow-sm opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            title="Remove from room"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {room?.participants?.filter(p => p.username?.toLowerCase().includes(memberSearchQuery.toLowerCase())).length === 0 && (
+                      <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        <p className="font-medium">No members found.</p>
+                      </div>
                     )}
                   </div>
-                ))
+                </div>
+              )}
+
+              {activeTab === 'invite' && isOwner && (
+                <div className="animate-fadeIn flex flex-col h-full min-h-0">
+                  <h3 className="text-2xl font-bold text-slate-800 mb-6">Invite People</h3>
+                  <div className="relative mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-4 top-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input 
+                      type="text" 
+                      placeholder="Search users to invite..." 
+                      value={inviteSearchQuery}
+                      onChange={(e) => setInviteSearchQuery(e.target.value)}
+                      className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all font-medium"
+                    />
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-2 space-y-3 mb-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300">
+                    {allUsers.filter(u => u.username?.toLowerCase().includes(inviteSearchQuery.toLowerCase()) || u.email?.toLowerCase().includes(inviteSearchQuery.toLowerCase())).map((u) => {
+                      const isMember = room?.participants?.some(p => p.userId?.toString() === u._id?.toString());
+                      return (
+                        <div
+                          key={u._id}
+                          className={`flex items-center gap-4 p-3.5 rounded-2xl transition-all border-2 ${isMember ? 'opacity-60 cursor-not-allowed border-slate-100 bg-slate-50' : selectedUsers.includes(u._id) ? 'border-indigo-500 bg-indigo-50/50 cursor-pointer shadow-sm' : 'border-transparent bg-white hover:border-slate-200 hover:bg-slate-50 cursor-pointer'}`}
+                          onClick={() => !isMember && handleUserToggle(u._id)}
+                        >
+                          <div className="w-11 h-11 rounded-full bg-slate-200 flex items-center justify-center text-slate-700 text-sm font-bold">
+                            {u.username?.charAt(0)?.toUpperCase() || u.email?.charAt(0)?.toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-slate-800 truncate">{u.username || 'User'}</p>
+                            <p className="text-xs text-slate-500 font-medium truncate mt-0.5">{u.email}</p>
+                          </div>
+                          {isMember ? (
+                            <span className="text-xs font-bold text-slate-500 bg-slate-200 px-3 py-1.5 rounded-lg">Already joined</span>
+                          ) : selectedUsers.includes(u._id) ? (
+                            <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center shadow-md shadow-indigo-200">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                            </div>
+                          ) : (
+                            <div className="w-7 h-7 rounded-full border-2 border-slate-300"></div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {allUsers.filter(u => u.username?.toLowerCase().includes(inviteSearchQuery.toLowerCase()) || u.email?.toLowerCase().includes(inviteSearchQuery.toLowerCase())).length === 0 && (
+                      <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mb-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                        <p className="font-medium">No users found.</p>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={sendInvitations}
+                    disabled={selectedUsers.length === 0}
+                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold rounded-2xl transition-all shadow-lg shadow-indigo-200 disabled:shadow-none text-base"
+                  >
+                    Send Invites {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ''}
+                  </button>
+                </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kicked from Room Popup */}
+      {kickedFromRoom && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm z-[60]">
+          <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm animate-slideIn text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-5">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-bold text-slate-800 mb-2">Removed from Room</h2>
+            <p className="text-slate-500 text-sm mb-6">
+              You have been removed from <span className="font-semibold text-slate-700">{kickedFromRoom}</span> by the room owner.
+            </p>
             <button
-              onClick={sendInvitations}
-              disabled={selectedUsers.length === 0}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold rounded-xl transition-all text-sm"
+              onClick={() => navigate('/')}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl transition-all shadow-md shadow-indigo-200 text-sm"
             >
-              Send Invite{selectedUsers.length > 0 ? ` (${selectedUsers.length})` : ''}
+              Back to Home
             </button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import User from "../models/UserModel.js";
 import { validationResult } from "express-validator";
-import { CreateRoom, GetAllRooms, JoinRoom, GetRoomByRoomId, DeleteRoom } from "../Services/RoomService.js";
+import { CreateRoom, GetAllRooms, JoinRoom, GetRoomByRoomId, DeleteRoom, LeaveRoom } from "../Services/RoomService.js";
 import redisClient from "../Services/RedisService.js";
 import crypto from 'crypto';
 
@@ -159,8 +159,28 @@ const DeleteRoomController = async (req, res) => {
 
         // Cleanup Redis data for this room
         await redisClient.del(`chat:${roomId}`);
+        await redisClient.del(`room:state:${roomId}`);
 
         return res.status(200).json({ message: "Room deleted successfully" });
+    }
+    catch (error) {
+        return res.status(400).json({ error: error.message });
+    }
+}
+
+const LeaveRoomController = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ error: errors.array() });
+    }
+
+    try {
+        const { roomId } = req.body;
+        const loggedinUser = await User.findOne({ email: req.user.email });
+
+        await LeaveRoom({ roomId, userID: loggedinUser._id });
+
+        return res.status(200).json({ message: "Left room successfully" });
     }
     catch (error) {
         return res.status(400).json({ error: error.message });
@@ -175,5 +195,6 @@ export {
     InviteToRoomController,
     GetNotificationsController,
     MarkNotificationReadController,
-    DeleteRoomController
+    DeleteRoomController,
+    LeaveRoomController
 };

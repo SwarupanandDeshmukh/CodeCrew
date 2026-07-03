@@ -8,7 +8,8 @@ import {
     InviteToRoomController,
     GetNotificationsController,
     MarkNotificationReadController,
-    DeleteRoomController
+    DeleteRoomController,
+    LeaveRoomController
 } from "../Controllers/RoomController.js";
 import authUser from "../Middleware/AuthMiddleware.js";
 
@@ -30,6 +31,12 @@ RoomRouter.post('/join',
     authUser,
     body('roomId').isString().withMessage("Room ID is required"),
     JoinRoomController
+);
+
+RoomRouter.post('/leave',
+    authUser,
+    body('roomId').isString().withMessage("Room ID is required"),
+    LeaveRoomController
 );
 
 RoomRouter.get('/get/:roomId',

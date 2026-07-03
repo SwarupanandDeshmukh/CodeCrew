@@ -75,6 +75,17 @@ io.on('connection', socket => {
         })
         .catch(err => console.log('Error fetching chat history:', err));
 
+    // Send room state from Redis to the newly connected user
+    const stateKey = `room:state:${roomId}`;
+    redisClient.get(stateKey)
+        .then(state => {
+            if (state) {
+                const parsedState = JSON.parse(state);
+                socket.emit('room-state', parsedState);
+            }
+        })
+        .catch(err => console.log('Error fetching room state:', err));
+
     socket.on('project-message', async data => {
 
         const message = data.message;
@@ -118,11 +129,44 @@ io.on('connection', socket => {
 
     })
 
-    socket.on('coding-session-toggle', data => {
+    socket.on('coding-session-toggle', async data => {
         if (socket.user.userId.toString() !== socket.room.createdBy.toString()) {
             return;
         }
+        // Store coding session state in Redis
+        const stateKey = `room:state:${roomId}`;
+        await redisClient.set(stateKey, JSON.stringify({ codingSession: data.open }));
         socket.broadcast.to(roomId).emit('coding-session-toggle', data);
+    });
+
+    socket.on('leave-room', data => {
+        socket.broadcast.to(roomId).emit('user-left', { userId: data.userId, username: data.username });
+        socket.leave(roomId);
+    });
+
+    socket.on('kick-user', async data => {
+        if (socket.user.userId.toString() !== socket.room.createdBy.toString()) {
+            return;
+        }
+        const room = await Room.findOne({ roomId });
+        if (room) {
+            room.participants = room.participants.filter(
+                p => p.userId.toString() !== data.userId.toString()
+            );
+            await room.save();
+        }
+        io.to(roomId).emit('user-kicked', {
+            userId: data.userId,
+            username: data.username,
+            roomName: socket.room.roomName
+        });
+        const sockets = await io.in(roomId).fetchSockets();
+        for (const s of sockets) {
+            if (s.user.userId.toString() === data.userId.toString()) {
+                s.leave(roomId);
+                break;
+            }
+        }
     });
 
     socket.on('event', data => { /* … */ });
