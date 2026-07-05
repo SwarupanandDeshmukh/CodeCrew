@@ -1,6 +1,5 @@
 <!-- Hero Section -->
 <div align="center">
-  <img src="https://via.placeholder.com/1000x300/1E1E1E/61DAFB?text=ChitChat-with-AI" alt="Hero Banner" width="100%" style="border-radius: 12px; margin-bottom: 20px;" />
 
   <h1>🚀 ChitChat-with-AI</h1>
   
