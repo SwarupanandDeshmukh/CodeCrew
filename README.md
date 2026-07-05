@@ -1,7 +1,7 @@
 <!-- Hero Section -->
 <div align="center">
 
-  <h1>🚀 ChitChat-with-AI</h1>
+  <h1>🚀 CodeCrew </h1>
   
   <p><b>A Real-Time, Collaborative coding and chatting Platform</b></p>
 
@@ -21,7 +21,7 @@
 
 <br />
 
-> **ChitChat-with-AI** transforms remote development by simulating an in-person pair-programming environment. Multiple developers can join a shared workspace to write, execute, and discuss code in real-time. It features an integrated **AI Programming Mentor** powered by Google Gemini, acting as an active participant to guide, explain, and assist directly within your collaborative chat.
+> **CodeCrew** transforms remote development by simulating an in-person pair-programming environment. Multiple developers can join a shared workspace to write, execute, and discuss code in real-time. It features an integrated **AI Programming Mentor** powered by Google Gemini, acting as an active participant to guide, explain, and assist directly within your collaborative chat.
 
 ---
 
